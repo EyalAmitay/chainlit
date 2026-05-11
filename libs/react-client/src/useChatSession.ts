@@ -243,8 +243,22 @@ const useChatSession = () => {
             return;
           }
         } else {
-          await wavRecorder.end();
-          await wavStreamPlayer.interrupt();
+          // Guard cleanup: if on_audio_start rejected the recording, the
+          // recorder was never .begin()'d and wavRecorder.end() throws
+          // "Session ended: please call .begin() first" — without this
+          // try/catch the exception escapes the handler and
+          // setAudioConnection('off') below never runs, leaving the UI
+          // stuck on the 'connecting' spinner.
+          try {
+            await wavRecorder.end();
+          } catch {
+            // ignored: recorder may not have been started
+          }
+          try {
+            await wavStreamPlayer.interrupt();
+          } catch {
+            // ignored: player may not have been connected
+          }
         }
         setAudioConnection(state);
       });
