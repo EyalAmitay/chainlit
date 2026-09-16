@@ -25,6 +25,7 @@ interface Props {
   id?: string;
   className?: string;
   autoFocus?: boolean;
+  disabled?: boolean;
   placeholder?: string;
   selectedCommand?: ICommand;
   setSelectedCommand: (command: ICommand | undefined) => void;
@@ -45,6 +46,7 @@ const Input = forwardRef<InputMethods, Props>(
       id,
       className,
       autoFocus,
+      disabled,
       selectedCommand,
       setSelectedCommand,
       onChange,
@@ -173,6 +175,7 @@ const Input = forwardRef<InputMethods, Props>(
           ref={textareaRef}
           id={id}
           autoFocus={autoFocus}
+          disabled={disabled}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

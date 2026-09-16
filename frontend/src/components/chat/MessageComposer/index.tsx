@@ -273,6 +273,9 @@ export default function MessageComposer({
         ref={inputRef}
         id="chat-input"
         autoFocus={!isMobile}
+        // A file/action/element ask has to be answered through its own widget, so
+        // a prompt typed here can never be sent. Only a text ask uses this input.
+        disabled={!!askUser && askUser.spec.type !== 'text'}
         selectedCommand={selectedCommand}
         setSelectedCommand={setSelectedCommand}
         onChange={setValue}
