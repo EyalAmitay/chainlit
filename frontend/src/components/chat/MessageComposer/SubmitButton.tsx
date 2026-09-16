@@ -24,13 +24,16 @@ export default function SubmitButton({
   disabled,
   onSubmit
 }: SubmitButtonProps) {
-  const { loading } = useChatData();
+  const { loading, askUser } = useChatData();
   const { firstInteraction } = useChatMessages();
   const { stopTask } = useChatInteract();
+  // The ask event ends loading, but the task is still waiting on this ask and
+  // the composer is disabled, so Stop is the only way out of it.
+  const isWaitingOnWidgetAsk = !!askUser && askUser.spec.type !== 'text';
 
   return (
     <TooltipProvider>
-      {loading && firstInteraction ? (
+      {(loading || isWaitingOnWidgetAsk) && firstInteraction ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
