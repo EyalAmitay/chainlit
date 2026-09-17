@@ -605,10 +605,22 @@ class AskElementMessage(AskMessageBase):
             element_id=self.element.id,
         )
 
-        res = cast(
-            Union[AskElementResponse, None],
-            await context.emitter.send_ask_user(step_dict, spec, self.raise_on_timeout),
-        )
+        try:
+            res = cast(
+                Union[AskElementResponse, None],
+                await context.emitter.send_ask_user(
+                    step_dict, spec, self.raise_on_timeout
+                ),
+            )
+        except asyncio.CancelledError:
+            # Left in the thread, the prompt comes back on resume as a widget
+            # that looks live and cannot submit.
+            try:
+                await self.element.remove()
+                await self.remove()
+            except Exception as e:
+                logger.error(f"Failed to remove a cancelled ask: {e!s}")
+            raise
 
         await self.element.remove()
 

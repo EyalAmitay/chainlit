@@ -18,6 +18,7 @@ export interface Props {
   latex?: boolean;
   renderMarkdown?: boolean;
   sections?: ContentSection[];
+  isExpiredAsk?: boolean;
 }
 
 const getMessageRenderProps = (message: IStep) => ({
@@ -33,7 +34,15 @@ const getMessageRenderProps = (message: IStep) => ({
 const MessageContent = memo(
   forwardRef<HTMLDivElement, Props>(
     (
-      { message, elements, allowHtml, latex, renderMarkdown, sections },
+      {
+        message,
+        elements,
+        allowHtml,
+        latex,
+        renderMarkdown,
+        sections,
+        isExpiredAsk
+      },
       ref
     ) => {
       const outputContent =
@@ -119,11 +128,30 @@ const MessageContent = memo(
         </div>
       );
 
+      const hasExpiredWidget =
+        !!isExpiredAsk && outputInlinedElements.length > 0;
+
       return (
         <div ref={ref} className="message-content w-full flex flex-col gap-2">
           {displayInput || (displayOutput && output) ? markdownContent : null}
           {displayOutput ? (
-            <InlinedElements elements={outputInlinedElements} />
+            <fieldset
+              disabled={hasExpiredWidget}
+              className={
+                hasExpiredWidget
+                  ? 'min-w-0 opacity-50 pointer-events-none'
+                  : 'contents'
+              }
+            >
+              <InlinedElements elements={outputInlinedElements} />
+            </fieldset>
+          ) : null}
+          {/* An answered ask is cleared a moment before the server removes
+              its widget; the delay keeps the notice out of that gap. */}
+          {displayOutput && hasExpiredWidget ? (
+            <div className="expired-ask text-sm text-muted-foreground animate-in fade-in delay-1000 fill-mode-backwards">
+              This request is no longer active.
+            </div>
           ) : null}
         </div>
       );
@@ -135,6 +163,7 @@ const MessageContent = memo(
       prevProps.latex === nextProps.latex &&
       prevProps.renderMarkdown === nextProps.renderMarkdown &&
       prevProps.elements === nextProps.elements &&
+      prevProps.isExpiredAsk === nextProps.isExpiredAsk &&
       isEqual(
         prevProps.sections ?? ['input', 'output'],
         nextProps.sections ?? ['input', 'output']

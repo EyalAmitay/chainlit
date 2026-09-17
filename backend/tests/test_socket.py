@@ -628,3 +628,38 @@ class TestConnectionSuccessfulIdempotency:
             await connection_successful("sid-1")
 
         assert on_chat_start.call_count == 1
+
+
+class TestConnectClosesStaleSocket:
+    """A reconnect must run the old socket's disconnect before the session is remapped."""
+
+    @staticmethod
+    async def _connect_with_existing_session(session_user, connecting_user):
+        from chainlit.socket import connect
+
+        session = Mock(socket_id="old_sid", user=session_user)
+        with (
+            patch("chainlit.socket.require_login", return_value=True),
+            patch(
+                "chainlit.socket._authenticate_connection",
+                AsyncMock(return_value=(connecting_user, "token")),
+            ),
+            patch("chainlit.socket.WebsocketSession.get_by_id", return_value=session),
+            patch("chainlit.socket.restore_existing_session", return_value=True),
+            patch("chainlit.socket.sio.disconnect", AsyncMock()) as disconnect,
+        ):
+            await connect("new_sid", {}, {"sessionId": "session_1"})
+        return disconnect
+
+    @pytest.mark.asyncio
+    async def test_owner_reconnect_disconnects_the_old_socket(self):
+        owner = Mock(identifier="owner")
+        disconnect = await self._connect_with_existing_session(owner, owner)
+        disconnect.assert_awaited_once_with("old_sid")
+
+    @pytest.mark.asyncio
+    async def test_other_user_cannot_disconnect_the_socket(self):
+        disconnect = await self._connect_with_existing_session(
+            Mock(identifier="owner"), Mock(identifier="intruder")
+        )
+        disconnect.assert_not_awaited()

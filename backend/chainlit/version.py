@@ -1,1 +1,1 @@
-__version__ = "2.12.0+zafran.react300.3"
+__version__ = "2.12.0+zafran.react300.4"

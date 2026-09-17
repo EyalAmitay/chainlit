@@ -174,6 +174,16 @@ async def connect(sid: str, environ: WSGIEnvironment, auth: WebSocketSessionAuth
         return sio.call(event, data, timeout=timeout, to=sid)
 
     session_id = auth["sessionId"]
+    # A half-open socket is only reaped at its ping timeout. Restoring the
+    # session first would unmap it, and its disconnect would skip on_chat_end.
+    stale_session = WebsocketSession.get_by_id(session_id)
+    if (
+        stale_session
+        and stale_session.socket_id != sid
+        and _session_owner_matches_user(stale_session, user)
+    ):
+        await sio.disconnect(stale_session.socket_id)
+
     if restore_existing_session(
         sid, session_id, emit_fn, emit_call_fn, environ, user=user
     ):

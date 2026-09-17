@@ -41,8 +41,12 @@ const Message = memo(
     isScorable,
     scorableRun
   }: Props) => {
-    const { allowHtml, cot, latex, renderUserMarkdown, onError } =
+    const { allowHtml, cot, latex, renderUserMarkdown, onError, askUser } =
       useContext(MessageContext);
+    // The session holds one ask at a time and drops it on reconnect or stop,
+    // while the message keeps waitForAnswer and a widget that cannot submit.
+    const isExpiredAsk =
+      !!message.waitForAnswer && askUser?.spec.step_id !== message.id;
     const layoutMaxWidth = useLayoutMaxWidth();
     const contentRef = useRef<HTMLDivElement>(null);
     const isUserMessage = message.type === 'user_message';
@@ -166,6 +170,7 @@ const Message = memo(
                         allowHtml={allowHtml}
                         latex={latex}
                         renderMarkdown={true}
+                        isExpiredAsk={isExpiredAsk}
                       />
 
                       <AskFileButton messageId={message.id} onError={onError} />

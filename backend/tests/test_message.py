@@ -654,6 +654,45 @@ class TestAskElementMessage:
                         element.remove.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_ask_element_message_removed_when_task_cancelled(self):
+        """A cancelled ask must not stay in the thread: it would resume as a dead widget."""
+        with mock_chainlit_context() as ctx:
+            element = AsyncMock()
+            element.id = "element_123"
+            msg = AskElementMessage(content="Submit", element=element)
+            ctx.emitter.send_ask_user = AsyncMock(side_effect=asyncio.CancelledError)
+
+            with patch("chainlit.message.get_data_layer", return_value=None):
+                with patch("chainlit.message.config") as mock_config:
+                    mock_config.code.author_rename = None
+
+                    with patch("chainlit.message.chat_context"):
+                        with pytest.raises(asyncio.CancelledError):
+                            await msg.send()
+
+            element.remove.assert_called_once()
+            ctx.emitter.delete_step.assert_called_once()
+            assert ctx.emitter.delete_step.call_args.args[0]["id"] == msg.id
+
+    @pytest.mark.asyncio
+    async def test_ask_element_message_cancel_survives_failed_removal(self):
+        """A failing cleanup must not turn the cancellation into an ordinary error."""
+        with mock_chainlit_context() as ctx:
+            element = AsyncMock()
+            element.id = "element_123"
+            element.remove.side_effect = RuntimeError("db down")
+            msg = AskElementMessage(content="Submit", element=element)
+            ctx.emitter.send_ask_user = AsyncMock(side_effect=asyncio.CancelledError)
+
+            with patch("chainlit.message.get_data_layer", return_value=None):
+                with patch("chainlit.message.config") as mock_config:
+                    mock_config.code.author_rename = None
+
+                    with patch("chainlit.message.chat_context"):
+                        with pytest.raises(asyncio.CancelledError):
+                            await msg.send()
+
+    @pytest.mark.asyncio
     async def test_ask_element_message_send_cancelled(self):
         """Test AskElementMessage send with cancelled response."""
         with mock_chainlit_context() as ctx:

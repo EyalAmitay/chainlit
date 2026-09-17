@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 
 import {
+  sessionIdState,
   threadIdToResumeState,
   useChatInteract,
   useChatSession
@@ -14,6 +15,7 @@ export default function ChatWrapper() {
   const { connect, session, idToResume } = useChatSession();
   const { sendMessage } = useChatInteract();
   const copilotThreadId = useRecoilValue(copilotThreadIdState);
+  const sessionId = useRecoilValue(sessionIdState);
   const setThreadIdToResume = useSetRecoilState(threadIdToResumeState);
   const hasConnected = useRef<boolean>(false);
   const lastConnectedThreadId = useRef<string | null>(null);
@@ -52,6 +54,21 @@ export default function ChatWrapper() {
 
     hasConnected.current = true;
     lastConnectedThreadId.current = copilotThreadId;
+
+    // Reopening the widget remounts this component, but the socket outlives
+    // it. Reconnecting would make the server drop a pending ask.
+    const liveSocket = session?.socket;
+    const liveAuth = liveSocket?.auth as
+      | { sessionId?: string; threadId?: string }
+      | undefined;
+    if (
+      liveSocket?.connected &&
+      liveAuth?.sessionId === sessionId &&
+      liveAuth?.threadId === copilotThreadId
+    ) {
+      return;
+    }
+
     connect({
       // @ts-expect-error window typing
       transports: window.transports,
