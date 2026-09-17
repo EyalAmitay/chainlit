@@ -675,6 +675,36 @@ class TestAskElementMessage:
             assert ctx.emitter.delete_step.call_args.args[0]["id"] == msg.id
 
     @pytest.mark.asyncio
+    async def test_ask_element_message_removal_survives_a_second_cancel(self):
+        """Stop cancels the task twice; the second cancel must not abort the removal."""
+        with mock_chainlit_context() as ctx:
+            removal_started = asyncio.Event()
+            removed = asyncio.Event()
+
+            async def slow_remove():
+                removal_started.set()
+                await asyncio.sleep(0.05)
+                removed.set()
+
+            element = AsyncMock()
+            element.id = "element_123"
+            element.remove = slow_remove
+            msg = AskElementMessage(content="Submit", element=element)
+            ctx.emitter.send_ask_user = AsyncMock(side_effect=asyncio.CancelledError)
+
+            with patch("chainlit.message.get_data_layer", return_value=None):
+                with patch("chainlit.message.config") as mock_config:
+                    mock_config.code.author_rename = None
+
+                    with patch("chainlit.message.chat_context"):
+                        task = asyncio.ensure_future(msg.send())
+                        await removal_started.wait()
+                        task.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await task
+                        await asyncio.wait_for(removed.wait(), timeout=1)
+
+    @pytest.mark.asyncio
     async def test_ask_element_message_cancel_survives_failed_removal(self):
         """A failing cleanup must not turn the cancellation into an ordinary error."""
         with mock_chainlit_context() as ctx:

@@ -581,6 +581,15 @@ class AskElementMessage(AskMessageBase):
 
         super().__post_init__()
 
+    async def _remove_cancelled(self):
+        # Left in the thread, the prompt comes back on resume as a widget that
+        # looks live and cannot submit.
+        try:
+            await self.element.remove()
+            await self.remove()
+        except Exception as e:
+            logger.error(f"Failed to remove a cancelled ask: {e!s}")
+
     async def send(self) -> Union[AskElementResponse, None]:
         """Send the custom element to the UI and wait for the reply."""
         if not self.created_at:
@@ -613,13 +622,9 @@ class AskElementMessage(AskMessageBase):
                 ),
             )
         except asyncio.CancelledError:
-            # Left in the thread, the prompt comes back on resume as a widget
-            # that looks live and cannot submit.
-            try:
-                await self.element.remove()
-                await self.remove()
-            except Exception as e:
-                logger.error(f"Failed to remove a cancelled ask: {e!s}")
+            # Shielded because stop cancels the task twice (chainlit, then the
+            # app's on_stop), and the second cancel would cut the removal short.
+            await asyncio.shield(self._remove_cancelled())
             raise
 
         await self.element.remove()
