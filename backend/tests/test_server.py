@@ -1152,3 +1152,118 @@ def test_health_check(test_client: TestClient):
     response = test_client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def _install_shared_thread_data_layer(metadata: dict):
+    """Point the data layer at one thread carrying ``metadata``. Returns a cleanup callable."""
+    from unittest.mock import AsyncMock
+
+    import chainlit.data as data_mod
+
+    dl = AsyncMock()
+    dl.get_thread.return_value = {
+        "id": "t1",
+        "name": "Thread 1",
+        "userIdentifier": "author",
+        "metadata": metadata,
+    }
+    dl.get_thread_author.return_value = "author"
+    dl.build_debug_url.return_value = ""
+
+    previous_layer = data_mod._data_layer
+    previous_initialized = data_mod._data_layer_initialized
+    data_mod._data_layer = dl
+    data_mod._data_layer_initialized = True
+
+    def cleanup():
+        data_mod._data_layer = previous_layer
+        data_mod._data_layer_initialized = previous_initialized
+
+    return cleanup
+
+
+def test_shared_thread_denied_when_callback_refuses(
+    test_client: TestClient,
+    test_config: ChainlitConfig,
+):
+    """A registered callback must be able to deny, not only to grant.
+
+    Regression test: the callback used to be OR-ed with the is_shared flag, so a shared thread
+    was served regardless of what the callback returned. Apps scoping shared threads to a
+    tenant or organisation had that scope silently ignored.
+    """
+    cleanup = _install_shared_thread_data_layer({"is_shared": True})
+    try:
+
+        async def deny(thread, user):
+            return False
+
+        test_config.code.on_shared_thread_view = deny
+
+        response = test_client.get("/project/share/t1")
+
+        assert response.status_code == 404
+    finally:
+        test_config.code.on_shared_thread_view = None
+        cleanup()
+
+
+def test_shared_thread_allowed_when_callback_grants(
+    test_client: TestClient,
+    test_config: ChainlitConfig,
+):
+    """The callback also grants: it decides in both directions, including for unshared threads."""
+    cleanup = _install_shared_thread_data_layer({"is_shared": False})
+    try:
+
+        async def allow(thread, user):
+            return True
+
+        test_config.code.on_shared_thread_view = allow
+
+        response = test_client.get("/project/share/t1")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == "t1"
+    finally:
+        test_config.code.on_shared_thread_view = None
+        cleanup()
+
+
+def test_shared_thread_falls_back_to_flag_without_callback(
+    test_client: TestClient,
+    test_config: ChainlitConfig,
+):
+    """With no callback registered, the is_shared flag alone decides, as before."""
+    test_config.code.on_shared_thread_view = None
+
+    cleanup = _install_shared_thread_data_layer({"is_shared": True})
+    try:
+        assert test_client.get("/project/share/t1").status_code == 200
+    finally:
+        cleanup()
+
+    cleanup = _install_shared_thread_data_layer({"is_shared": False})
+    try:
+        assert test_client.get("/project/share/t1").status_code == 404
+    finally:
+        cleanup()
+
+
+def test_shared_thread_denied_when_callback_raises(
+    test_client: TestClient,
+    test_config: ChainlitConfig,
+):
+    """A callback that raises must fail closed rather than fall through to the flag."""
+    cleanup = _install_shared_thread_data_layer({"is_shared": True})
+    try:
+
+        async def explode(thread, user):
+            raise RuntimeError("boom")
+
+        test_config.code.on_shared_thread_view = explode
+
+        assert test_client.get("/project/share/t1").status_code == 404
+    finally:
+        test_config.code.on_shared_thread_view = None
+        cleanup()

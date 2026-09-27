@@ -1001,7 +1001,7 @@ async def get_shared_thread(
     if not data_layer:
         raise HTTPException(status_code=400, detail="Data persistence is not enabled")
 
-    # No auth required: allow anonymous access to shared threads
+    # Authentication is enforced by UserParam whenever the app requires login.
     thread = await data_layer.get_thread(thread_id)
 
     if not thread:
@@ -1016,7 +1016,14 @@ async def get_shared_thread(
     if not isinstance(metadata, dict):
         metadata = {}
 
-    user_can_view = False
+    # When an app registers on_shared_thread_view it owns the decision, so its answer is
+    # authoritative in both directions. Previously the callback was OR-ed with the is_shared
+    # flag, which meant it could only ever grant access: for any thread whose metadata had
+    # is_shared set, the thread was served no matter what the callback returned. An app using
+    # the callback to scope sharing (to a tenant, an organisation, a workspace) had that scope
+    # silently ignored.
+    #
+    # With no callback registered, behaviour is unchanged: the is_shared flag alone decides.
     if getattr(config.code, "on_shared_thread_view", None):
         try:
             user_can_view = await config.code.on_shared_thread_view(
@@ -1025,10 +1032,9 @@ async def get_shared_thread(
         except Exception:
             user_can_view = False
 
-    is_shared = bool(metadata.get("is_shared"))
-
-    # Proceed only raise an error if both conditions are False.
-    if (not user_can_view) and (not is_shared):
+        if not user_can_view:
+            raise HTTPException(status_code=404, detail="Thread not found")
+    elif not bool(metadata.get("is_shared")):
         raise HTTPException(status_code=404, detail="Thread not found")
 
     metadata.pop("chat_profile", None)
